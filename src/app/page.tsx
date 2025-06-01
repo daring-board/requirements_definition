@@ -10,52 +10,19 @@ import { Progress } from "@/components/ui/progress"
 import { CheckCircle, Circle, ArrowRight, ArrowLeft, FileText, Users, MessageSquare, Eye } from "lucide-react"
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
+import { supabase } from "@/utils/supabaseClient"
+import { env } from "@/utils/env"
+import { Task, StepData } from "@/types"
 
-interface StepData {
-  step1: string[]
-  step2: {
-    targetUsers: string
-    usageScenarios: string
-    benefits: string
-  }
-  step3: {
-    usageScenes: string
-    explanation: string
-  }
-  step4: {
-    feedback: string
-    improvements: string
-    finalCheck: string
-  }
-}
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
 
-interface Task {
-  id: string
-  title: string
-  description: string
-  createdAt: Date
-  updatedAt: Date
-  progress: number
-  stepData: StepData
-}
-
-const defaultStepData: StepData = {
-  step1: [""],
-  step2: {
-    targetUsers: "",
-    usageScenarios: "",
-    benefits: "",
-  },
-  step3: {
-    usageScenes: "",
-    explanation: "",
-  },
-  step4: {
-    feedback: "",
-    improvements: "",
-    finalCheck: "",
-  },
-}
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export default function RequirementsDefinitionApp() {
   const [currentStep, setCurrentStep] = useState(1)
@@ -70,45 +37,63 @@ export default function RequirementsDefinitionApp() {
     avatar: "/placeholder.svg?height=40&width=40",
   }
 
-  // Load tasks from localStorage on mount
+  // Load tasks from Supabase on mount
   useEffect(() => {
-    const savedTasks = localStorage.getItem("requirements-tasks")
-    if (savedTasks) {
-      const parsedTasks = JSON.parse(savedTasks).map((task: any) => ({
-        ...task,
-        createdAt: new Date(task.createdAt),
-        updatedAt: new Date(task.updatedAt),
-      }))
-      setTasks(parsedTasks)
-      if (parsedTasks.length > 0) {
-        setCurrentTaskId(parsedTasks[0].id)
-        setStepData(parsedTasks[0].stepData)
-        setCompletedSteps(getCompletedStepsFromData(parsedTasks[0].stepData))
+    const fetchTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("tasks")
+          .select("*")
+          .order("created_at", { ascending: false })
+
+        if (error) throw error;
+        setTasks(data.map(task => ({
+          ...task,
+          createdAt: new Date(task.created_at),
+          updatedAt: new Date(task.updated_at),
+        })))
+        if (data.length > 0) {
+          setCurrentTaskId(data[0].id)
+          setStepData(data[0].step_data)
+          setCompletedSteps(getCompletedStepsFromData(data[0].step_data))
+        }
+      } catch (error) {
+        console.error("Error fetching tasks:", error)
       }
     }
+
+    fetchTasks()
   }, [])
 
-  // Save tasks to localStorage whenever tasks change
+  // Save tasks to Supabase whenever tasks change
   useEffect(() => {
     if (tasks.length > 0) {
-      localStorage.setItem("requirements-tasks", JSON.stringify(tasks))
+      supabase
+        .from("tasks")
+        .upsert(
+          tasks.map(task => ({
+            ...task,
+            created_at: task.createdAt.toISOString(),
+            updated_at: task.updatedAt.toISOString(),
+          }))
+        )
+        .catch(error => console.error("Error saving tasks:", error))
     }
   }, [tasks])
 
   // Save current task data whenever stepData changes
   useEffect(() => {
     if (currentTaskId) {
-      const updatedTasks = tasks.map((task) =>
-        task.id === currentTaskId
-          ? {
-              ...task,
-              stepData,
-              updatedAt: new Date(),
-              progress: completedSteps.length,
-            }
-          : task,
-      )
-      setTasks(updatedTasks)
+      supabase
+        .from("tasks")
+        .update({
+          step_data: stepData,
+          completed_steps: completedSteps,
+          progress: completedSteps.length,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", currentTaskId)
+        .catch(error => console.error("Error updating task:", error))
     }
   }, [stepData, completedSteps, currentTaskId])
 
@@ -131,7 +116,8 @@ export default function RequirementsDefinitionApp() {
     }
 
     // Step 4: Check if all fields are filled
-    if (data.step4.feedback.trim() && data.step4.improvements.trim() && data.step4.finalCheck.trim()) {
+    if (data.step4.feedback.trim() && data.step4.improvements.trim() && data.step
+      .finalCheck.trim()) {
       completed.push(4)
     }
 
@@ -169,47 +155,89 @@ export default function RequirementsDefinitionApp() {
     },
   ]
 
-  const handleTaskSelect = (taskId: string) => {
-    const task = tasks.find((t) => t.id === taskId)
-    if (task) {
+  const handleTaskSelect = async (taskId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("id", taskId)
+        .single()
+
+      if (error) throw error;
       setCurrentTaskId(taskId)
-      setStepData(task.stepData)
-      setCompletedSteps(getCompletedStepsFromData(task.stepData))
+      setStepData(data.step_data)
+      setCompletedSteps(getCompletedStepsFromData(data.step_data))
       setCurrentStep(1)
+    } catch (error) {
+      console.error("Error selecting task:", error)
     }
   }
 
-  const handleTaskCreate = (newTask: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
-    const task: Task = {
-      ...newTask,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      stepData: defaultStepData,
+  const handleTaskCreate = async (newTask: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert({
+          ...newTask,
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) throw error;
+      setTasks([data, ...tasks])
+      setCurrentTaskId(data.id)
+      setStepData(defaultStepData)
+      setCompletedSteps([])
+      setCurrentStep(1)
+    } catch (error) {
+      console.error("Error creating task:", error)
     }
-    setTasks((prev) => [task, ...prev])
-    setCurrentTaskId(task.id)
-    setStepData(defaultStepData)
-    setCompletedSteps([])
-    setCurrentStep(1)
   }
 
-  const handleTaskDelete = (taskId: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== taskId))
-    if (currentTaskId === taskId) {
-      const remainingTasks = tasks.filter((t) => t.id !== taskId)
-      if (remainingTasks.length > 0) {
-        handleTaskSelect(remainingTasks[0].id)
-      } else {
-        setCurrentTaskId(null)
-        setStepData(defaultStepData)
-        setCompletedSteps([])
+  const handleTaskDelete = async (taskId: string) => {
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .delete()
+        .eq("id", taskId)
+
+      if (error) throw error;
+      setTasks(tasks.filter(task => task.id !== taskId))
+      if (currentTaskId === taskId) {
+        const remainingTasks = tasks.filter(task => task.id !== taskId)
+        if (remainingTasks.length > 0) {
+          handleTaskSelect(remainingTasks[0].id)
+        } else {
+          setCurrentTaskId(null)
+          setStepData(defaultStepData)
+          setCompletedSteps([])
+        }
       }
+    } catch (error) {
+      console.error("Error deleting task:", error)
     }
   }
 
-  const handleTaskUpdate = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, ...updates, updatedAt: new Date() } : task)))
+  const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", taskId)
+        .select()
+        .single()
+
+      if (error) throw error;
+      setTasks(tasks.map(task => task.id === taskId ? data : task))
+    } catch (error) {
+      console.error("Error updating task:", error)
+    }
   }
 
   const addIdeaItem = () => {
