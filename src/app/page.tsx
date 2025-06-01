@@ -68,7 +68,7 @@ export default function RequirementsDefinitionApp() {
           .order('updated_at', { ascending: false }); // 最新の更新日時でソート
         if (error) throw error;
 
-        const fetchedTasks: Task[] = data.map((task: any) => ({
+        const fetchedTasks: Task[] = data.map((task: Task) => ({
           id: task.id,
           title: task.title || "新しいタスク",
           description: task.description || "タスクの説明がありません",
@@ -353,7 +353,6 @@ export default function RequirementsDefinitionApp() {
             onTaskSelect={handleTaskSelect}
             onTaskCreate={handleTaskCreate}
             onTaskDelete={handleTaskDelete}
-            onTaskUpdate={handleTaskUpdate}
           />
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -377,7 +376,6 @@ export default function RequirementsDefinitionApp() {
           onTaskSelect={handleTaskSelect}
           onTaskCreate={handleTaskCreate}
           onTaskDelete={handleTaskDelete}
-          onTaskUpdate={handleTaskUpdate}
         />
 
         <div className="flex-1 overflow-auto">

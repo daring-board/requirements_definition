@@ -23,7 +23,6 @@ interface SidebarProps {
   onTaskSelect: (taskId: string) => void
   onTaskCreate: (task: Omit<Task, "id" | "created_at" | "updated_at">) => void
   onTaskDelete: (taskId: string) => void
-  onTaskUpdate: (taskId: string, updates: Partial<Task>) => void
 }
 
 export function Sidebar({
@@ -32,7 +31,6 @@ export function Sidebar({
   onTaskSelect,
   onTaskCreate,
   onTaskDelete,
-  onTaskUpdate,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
