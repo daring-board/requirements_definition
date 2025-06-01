@@ -15,6 +15,7 @@ import { Bell, Settings, LogOut, User, HelpCircle } from "lucide-react"
 
 interface HeaderProps {
   user: {
+    id: string
     name: string
     email: string
     avatar?: string

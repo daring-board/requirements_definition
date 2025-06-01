@@ -15,21 +15,13 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Plus, FileText, Trash2, Edit, Search, Calendar } from "lucide-react"
-
-interface Task {
-  id: string
-  title: string
-  description: string
-  createdAt: Date
-  updatedAt: Date
-  progress: number
-}
+import { Task, defaultStepData } from "@/types"
 
 interface SidebarProps {
   tasks: Task[]
   currentTaskId: string | null
   onTaskSelect: (taskId: string) => void
-  onTaskCreate: (task: Omit<Task, "id" | "createdAt" | "updatedAt">) => void
+  onTaskCreate: (task: Omit<Task, "id" | "created_at" | "updated_at">) => void
   onTaskDelete: (taskId: string) => void
   onTaskUpdate: (taskId: string, updates: Partial<Task>) => void
 }
@@ -59,6 +51,8 @@ export function Sidebar({
         title: newTaskTitle,
         description: newTaskDescription,
         progress: 0,
+        stepData: defaultStepData, // or provide a suitable initial value
+        completedSteps: [], // or provide a suitable initial value
       })
       setNewTaskTitle("")
       setNewTaskDescription("")
@@ -193,7 +187,7 @@ export function Sidebar({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1 text-slate-500 text-xs">
                     <Calendar className="h-3 w-3" />
-                    {formatDate(task.updatedAt)}
+                    {formatDate(task.updated_at)}
                   </div>
                   <div className="text-xs text-slate-400">{task.progress}/4 完了</div>
                 </div>

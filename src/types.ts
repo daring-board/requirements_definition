@@ -16,11 +16,32 @@ export interface StepData {
   };
 }
 
+// デフォルトのステップデータ
+export const defaultStepData: StepData = {
+  step1: [""],
+  step2: {
+    targetUsers: "",
+    usageScenarios: "",
+    benefits: "",
+  },
+  step3: {
+    usageScenes: "",
+    explanation: "",
+  },
+  step4: {
+    feedback: "",
+    improvements: "",
+    finalCheck: "",
+  },
+}
+
 export interface Task {
   id: string;
+  title: string;
+  description: string;
   stepData: StepData;
   completedSteps: number[];
   progress: number;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }

@@ -7,28 +7,19 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { CheckCircle, Circle, ArrowRight, ArrowLeft, FileText, Users, MessageSquare, Eye } from "lucide-react"
+import { CheckCircle, Circle, ArrowRight, ArrowLeft, FileText, Users, MessageSquare, Eye, Loader2 } from "lucide-react"
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
-import { Task, StepData } from "@/types"
+import { Task, StepData, defaultStepData } from "@/types"
 
-const defaultStepData: StepData = {
-  step1: [""],
-  step2: {
-    targetUsers: "",
-    usageScenarios: "",
-    benefits: "",
-  },
-  step3: {
-    usageScenes: "",
-    explanation: "",
-  },
-  step4: {
-    feedback: "",
-    improvements: "",
-    finalCheck: "",
-  },
-}
+// Supabase imports
+import { createClient } from '@supabase/supabase-js';
+
+// Supabase クライアントの初期化
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+)
 
 export default function RequirementsDefinitionApp() {
   const [currentStep, setCurrentStep] = useState(1)
@@ -36,54 +27,118 @@ export default function RequirementsDefinitionApp() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
   const [stepData, setStepData] = useState<StepData>(defaultStepData)
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState(true);
 
   const user = {
-    name: "田中 太郎",
-    email: "tanaka@example.com",
-    avatar: "/placeholder.svg?height=40&width=40",
+    id: "anonymous-user-id", // ユーザーID
+    name: "田中 太郎", // ユーザー名
+    email: "tanaka@example.com", // ユーザーメール
+    avatar: "/placeholder.svg?height=40&width=40", // アバター画像
   }
 
-  // Load tasks from localStorage on mount
+  // Supabaseの認証とユーザーIDの取得
   useEffect(() => {
-    const savedTasks = localStorage.getItem("requirements-tasks")
-    if (savedTasks) {
-      const parsedTasks = JSON.parse(savedTasks).map((task: any) => ({
-        ...task,
-        createdAt: new Date(task.createdAt),
-        updatedAt: new Date(task.updatedAt),
-      }))
-      setTasks(parsedTasks)
-      if (parsedTasks.length > 0) {
-        setCurrentTaskId(parsedTasks[0].id)
-        setStepData(parsedTasks[0].stepData)
-        setCompletedSteps(getCompletedStepsFromData(parsedTasks[0].stepData))
+    setIsSupabaseLoading(false); // Supabaseのロード完了をシミュレート
+
+    // 認証状態の変更を監視
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+      } else {
+        console.log("No user session found, using anonymous user.");}
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Supabaseからタスクをリアルタイムで読み込む
+  useEffect(() => {
+    if (!user.id || isSupabaseLoading) {
+      console.log("Supabase or User ID not ready for fetching tasks.");
+      return;
+    }
+
+    // 初期データフェッチ
+    const fetchInitialTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .order('updated_at', { ascending: false }); // 最新の更新日時でソート
+        if (error) throw error;
+
+        const fetchedTasks: Task[] = data.map((task: any) => ({
+          id: task.id,
+          title: task.title || "新しいタスク",
+          description: task.description || "タスクの説明がありません",
+          stepData: task.stepData || defaultStepData,
+          completedSteps: getCompletedStepsFromData(task.stepData || defaultStepData),
+          progress: task.progress || 0,
+          created_at: new Date(task.created_at),
+          updated_at: new Date(task.updated_at),
+        }));
+        setTasks(fetchedTasks);
+
+        // 初期ロード時に最初のタスクを選択
+        if (!currentTaskId && fetchedTasks.length > 0) {
+          setCurrentTaskId(fetchedTasks[0].id);
+          setStepData(fetchedTasks[0].stepData);
+          setCompletedSteps(getCompletedStepsFromData(fetchedTasks[0].stepData));
+        } else if (currentTaskId) {
+          // 現在選択中のタスクのデータが更新された場合に反映
+          const currentTask = fetchedTasks.find(t => t.id === currentTaskId);
+          if (currentTask) {
+            setStepData(currentTask.stepData);
+            setCompletedSteps(getCompletedStepsFromData(currentTask.stepData));
+          } else if (fetchedTasks.length > 0) {
+            // 現在のタスクが削除された場合、最初のタスクを選択
+            setCurrentTaskId(fetchedTasks[0].id);
+            setStepData(fetchedTasks[0].stepData);
+            setCompletedSteps(getCompletedStepsFromData(fetchedTasks[0].stepData));
+          } else {
+            // 全てのタスクが削除された場合
+            setCurrentTaskId(null);
+            setStepData(defaultStepData);
+            setCompletedSteps([]);
+          }
+        }
+        console.log("Tasks fetched from Supabase:", fetchedTasks);
+      } catch (error) {
+        console.error("Error fetching tasks from Supabase:", error);
       }
-    }
-  }, [])
+    };
 
-  // Save tasks to localStorage whenever tasks change
-  useEffect(() => {
-    if (tasks.length > 0) {
-      localStorage.setItem("requirements-tasks", JSON.stringify(tasks))
-    }
-  }, [tasks])
+    fetchInitialTasks();
+  }, [user.id, isSupabaseLoading, currentTaskId]); // currentTaskId を依存配列に追加
 
-  // Save current task data whenever stepData changes
+  // stepDataが変更されたときにSupabaseの現在のタスクを更新
   useEffect(() => {
-    if (currentTaskId) {
-      const updatedTasks = tasks.map((task) =>
-        task.id === currentTaskId
-          ? {
-              ...task,
-              stepData,
-              updatedAt: new Date(),
-              progress: completedSteps.length,
-            }
-          : task,
-      )
-      setTasks(updatedTasks)
-    }
-  }, [stepData, completedSteps, currentTaskId])
+    const updateCurrentTaskInSupabase = async () => {
+      if (!user.id || !currentTaskId) {
+        return;
+      }
+
+      try {
+        console.log("Updating current task in Supabase:", stepData, completedSteps);
+        const { error } = await supabase
+          .from('tasks')
+          .update({
+            stepData: stepData,
+            progress: completedSteps.length,
+            // updated_at: date, // SupabaseはISO文字列を推奨
+          })
+          .eq('id', currentTaskId);
+
+        if (error) throw error;
+        console.log("Current task data updated in Supabase:", currentTaskId);
+      } catch (error) {
+        console.error("Error updating current task in Supabase:", error);
+      }
+    };
+
+    updateCurrentTaskInSupabase();
+  }, [stepData, completedSteps, currentTaskId, user.id]);
 
   const getCompletedStepsFromData = (data: StepData): number[] => {
     const completed: number[] = []
@@ -152,37 +207,83 @@ export default function RequirementsDefinitionApp() {
     }
   }
 
-  const handleTaskCreate = (newTask: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
-    const task: Task = {
-      ...newTask,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      stepData: defaultStepData,
+  const handleTaskCreate = async (newTask: Omit<Task, "id" | "created_at" | "updated_at" | "progress">) => {
+    if (!user.id) {
+      console.error("User ID not available for task creation.");
+      return;
     }
-    setTasks((prev) => [task, ...prev])
-    setCurrentTaskId(task.id)
-    setStepData(defaultStepData)
-    setCompletedSteps([])
-    setCurrentStep(1)
+    try {
+      console.log("Creating new task in Supabase:", newTask);
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert({
+          ...newTask,
+          stepData: defaultStepData,
+          progress: 0,
+          // created_at, updated_at はDBのデフォルト値で自動設定されることを期待
+        })
+        .select(); // 挿入されたデータを取得
+
+      if (error) throw error;
+      console.log("New task created in Supabase:", data[0].id);
+      setCurrentTaskId(data[0].id);
+      setStepData(defaultStepData);
+      setCompletedSteps([]);
+      setCurrentStep(1);
+    } catch (error) {
+      console.error("Error creating new task:", error);
+    }
   }
 
-  const handleTaskDelete = (taskId: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== taskId))
-    if (currentTaskId === taskId) {
-      const remainingTasks = tasks.filter((t) => t.id !== taskId)
-      if (remainingTasks.length > 0) {
-        handleTaskSelect(remainingTasks[0].id)
-      } else {
-        setCurrentTaskId(null)
-        setStepData(defaultStepData)
-        setCompletedSteps([])
+  const handleTaskDelete = async (taskId: string) => {
+    if (!user.id) {
+      console.error("User ID not available for task deletion.");
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId)
+
+      if (error) throw error;
+      console.log("Task deleted from Supabase:", taskId);
+
+      if (currentTaskId === taskId) {
+        const remainingTasks = tasks.filter((t) => t.id !== taskId);
+        if (remainingTasks.length > 0) {
+          handleTaskSelect(remainingTasks[0].id);
+        } else {
+          setCurrentTaskId(null);
+          setStepData(defaultStepData);
+          setCompletedSteps([]);
+          setCurrentStep(1);
+        }
       }
+    } catch (error) {
+      console.error("Error deleting task:", error);
     }
   }
 
-  const handleTaskUpdate = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, ...updates, updatedAt: new Date() } : task)))
+  const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
+    if (!user.id) {
+      console.error("User ID not available for task update.");
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(), // SupabaseはISO文字列を推奨
+        })
+        .eq('id', taskId)
+
+      if (error) throw error;
+      console.log("Task updated in Supabase:", taskId);
+    } catch (error) {
+      console.error("Error updating task:", error);
+    }
   }
 
   const addIdeaItem = () => {
@@ -213,6 +314,11 @@ export default function RequirementsDefinitionApp() {
   }
 
   const nextStep = () => {
+    handleTaskUpdate(currentTaskId!, {
+      stepData: stepData,
+      completedSteps: [...completedSteps, currentStep],
+      progress: (completedSteps.length + 1) / 4 * 100, // 進捗を更新
+    })
     markStepComplete(currentStep)
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1)
@@ -227,10 +333,19 @@ export default function RequirementsDefinitionApp() {
 
   const progress = (completedSteps.length / 4) * 100
 
+  if (isSupabaseLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white">
+        <Loader2 className="h-10 w-10 animate-spin mr-2" />
+        Loading Application...
+      </div>
+    );
+  }
+
   if (!currentTaskId) {
     return (
       <div className="h-screen flex flex-col bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-        <Header user={user} />
+        <Header user={user} /> {/* userId を Header に渡す */}
         <div className="flex flex-1">
           <Sidebar
             tasks={tasks}
@@ -254,7 +369,7 @@ export default function RequirementsDefinitionApp() {
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Header user={user} />
+      <Header user={user} /> {/* userId を Header に渡す */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           tasks={tasks}
